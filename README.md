@@ -174,6 +174,19 @@ non-deterministic, so run them several times before comparing.
 4. **Enforce**: switch to `mode: enforce`, with approvals routed to a human or a ticketing system.
 5. **Audit**: set `audit_log:` to keep a JSONL log, and verify it with `python -m agentgov verify-audit FILE`.
 
+## Guided walkthrough (Jupyter)
+
+`notebooks/agentgov_walkthrough.ipynb` is a step-by-step proof of concept. It shows an
+ungoverned agent being hijacked, builds the control layer one policy at a time, re-runs the
+attack under governance, then covers the policy file, audit trail, monitor mode, custom
+policies and the safety/utility evaluation. It ends with a scenario you can edit and score.
+It runs offline, and the saved outputs mean it can be read on GitHub without running it.
+
+```bash
+pip install -e . jupyter
+jupyter notebook notebooks/agentgov_walkthrough.ipynb
+```
+
 ## Examples
 
 | file | shows |
