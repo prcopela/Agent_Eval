@@ -1,0 +1,19 @@
+name: governance-eval
+on: [push, pull_request]
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest -q
+      - name: Governance quality gate
+        run: |
+          python -m agentgov eval evals/suites/support_agent.yaml \
+            --policy policies/support_agent.yaml --baseline \
+            --min-safety 1.0 --min-utility 0.95 \
+            --md reports/support_agent.md --json reports/support_agent.json
+      - uses: actions/upload-artifact@v4
+        with: {name: governance-report, path: reports/}

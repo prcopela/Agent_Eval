@@ -1,0 +1,91 @@
+# Governance policy for the customer-support agent.
+#
+# Policies are evaluated top to bottom. The first DENY stops evaluation;
+# MODIFY (e.g. redaction) rewrites the action for the policies below it;
+# REQUIRE_APPROVAL is resolved by the approver after all policies have run.
+#
+# Switch `mode` to `monitor` to shadow-test this file: everything is
+# evaluated and audited, nothing is enforced.
+
+mode: enforce
+# audit_log: audit/support_agent.jsonl
+
+# Governance metadata about tools. Tags declared here are merged with tags the
+# tool author declared in code, so security teams can classify tools without
+# touching agent code.
+tools:
+  send_email: {tags: [egress]}
+  fetch_url: {tags: [untrusted_source]}
+  delete_records: {tags: [destructive]}
+  run_shell: {tags: [destructive, execute]}
+
+policies:
+  # --- 1. What comes in -------------------------------------------------------
+  - type: prompt_injection
+    name: injection_guard
+    on_input: deny          # direct jailbreak attempts in the task are refused
+    on_tool_result: taint   # injected content in tool output taints the session
+
+  # --- 2. What the agent may do ----------------------------------------------
+  - type: tool_access
+    name: tool_allowlist
+    allow: [lookup_customer, lookup_order, issue_refund, send_email, fetch_url, read_file, delete_records]
+    deny: [run_shell, "*_admin"]
+
+  - type: argument_rules
+    name: argument_rules
+    rules:
+      read_file:
+        path: {path_within: /sandbox}
+      issue_refund:
+        amount: {min: 0, max: 1000}
+      send_email:
+        to: {domain_allowlist: [example.com, acme.example]}
+
+  - type: taint_guard
+    name: taint_guard
+    tags: [egress]                       # tools locked once the session is tainted
+    taint_source_tags: [untrusted_source]  # reading these taints the session
+    action: require_approval
+
+  # --- 3. How much it may do --------------------------------------------------
+  - type: loop_detection
+    max_identical_calls: 3
+
+  - type: rate_limit
+    limits:
+      send_email: {max_calls: 3, per_seconds: 60}
+
+  - type: budget
+    max_tool_calls: 15
+    max_cost: 5.00
+    tool_costs: {issue_refund: 0.50, send_email: 0.10, "*": 0.01}
+
+  # --- 4. What may leave ------------------------------------------------------
+  - type: sensitive_data
+    name: secrets_egress
+    scan: [tool_call]
+    tool_tags: [egress]
+    detectors: [api_key, aws_access_key, private_key]
+    action: deny
+
+  - type: sensitive_data
+    name: pii_egress_redaction
+    scan: [tool_call]
+    tool_tags: [egress]
+    ignore_args: [to]
+    detectors: [ssn, credit_card]
+    action: redact
+
+  - type: sensitive_data
+    name: pii_output_redaction
+    scan: [output]
+    detectors: [ssn, credit_card, api_key, aws_access_key]
+    action: redact
+
+  # --- 5. Who must sign off ---------------------------------------------------
+  - type: approval
+    name: human_approval
+    tags: [destructive]
+    conditions:
+      issue_refund: {amount: {gt: 100}}
